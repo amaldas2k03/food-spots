@@ -1,20 +1,28 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { LngLatBounds, Marker } from 'maplibre-gl';
 import { Search, GripVertical, X, Route as RouteIcon, Save, Clock, MapPin } from 'lucide-react';
 import * as spotsApi from '../api/spots.js';
 import * as crawlsApi from '../api/crawls.js';
 import { useCrawlStore } from '../store/crawlStore.js';
 import { useAuthStore } from '../store/authStore.js';
-import { useGoogleMaps, MAP_STYLE, DEFAULT_CENTER } from '../hooks/useGoogleMaps.js';
+import MapNotice from '../components/MapNotice.jsx';
+import { useMap, DEFAULT_CENTER, ACCENT } from '../hooks/useMap.js';
+import { decodePolyline } from '../utils/polyline.js';
 import { formatDistance, formatDuration, priceLabel } from '../utils/format.js';
+
+const ROUTE_SOURCE = 'crawl-route';
+const ROUTE_LAYER = 'crawl-route-line';
 
 export default function CrawlPlanner() {
   const user = useAuthStore((s) => s.user);
   const { stops, title, setTitle, addStop, removeStop, moveStop, reset } = useCrawlStore();
-  const { ready, configured, error: mapsError } = useGoogleMaps();
 
   const mapEl = useRef(null);
-  const mapRef = useRef(null);
-  const rendererRef = useRef(null);
+  const { map: mapRef, ready, configured, error: mapsError } = useMap(mapEl, {
+    center: DEFAULT_CENTER,
+    zoom: 11, // same framing as the previous Google zoom 12
+  });
+  const markersRef = useRef([]);
   const dragIndex = useRef(null);
 
   const [query, setQuery] = useState('');
@@ -55,44 +63,53 @@ export default function CrawlPlanner() {
     };
   }, [stops]);
 
+  // Draw the stops and the route the server computed. Ordering comes straight
+  // from the store, so dragging a stop redraws without re-routing here.
   useEffect(() => {
-    if (!ready || !mapEl.current || mapRef.current) return;
-    mapRef.current = new window.google.maps.Map(mapEl.current, {
-      center: DEFAULT_CENTER,
-      zoom: 12,
-      styles: MAP_STYLE,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-    });
-    rendererRef.current = new window.google.maps.DirectionsRenderer({
-      map: mapRef.current,
-      polylineOptions: { strokeColor: '#E07B39', strokeWeight: 4 },
-    });
-  }, [ready]);
+    const map = mapRef.current;
+    if (!ready || !map) return;
 
-  // Draw the route client-side; the server response gives us the totals.
-  useEffect(() => {
-    if (!ready || !rendererRef.current || stops.length < 2) {
-      rendererRef.current?.setDirections({ routes: [] });
-      return;
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current = stops.map((spot, i) => {
+      const el = document.createElement('div');
+      el.title = spot.name;
+      el.className =
+        'flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-accent text-xs font-semibold text-white shadow-card';
+      el.textContent = String(i + 1);
+      return new Marker({ element: el }).setLngLat([spot.lng, spot.lat]).addTo(map);
+    });
+
+    // The server's overview polyline follows real roads. Without it (routing
+    // unconfigured, or fewer than two stops) fall back to a dashed connector.
+    const routeLine = decodePolyline(route?.polyline);
+    const line = routeLine.length ? routeLine : stops.map((s) => [s.lng, s.lat]);
+    const data = {
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: stops.length >= 2 ? line : [] },
+    };
+
+    if (map.getSource(ROUTE_SOURCE)) {
+      map.getSource(ROUTE_SOURCE).setData(data);
+    } else {
+      map.addSource(ROUTE_SOURCE, { type: 'geojson', data });
+      map.addLayer({
+        id: ROUTE_LAYER,
+        type: 'line',
+        source: ROUTE_SOURCE,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ACCENT, 'line-width': 4 },
+      });
     }
+    map.setPaintProperty(ROUTE_LAYER, 'line-dasharray', routeLine.length ? null : [2, 2]);
 
-    new window.google.maps.DirectionsService().route(
-      {
-        origin: { lat: stops[0].lat, lng: stops[0].lng },
-        destination: { lat: stops.at(-1).lat, lng: stops.at(-1).lng },
-        waypoints: stops.slice(1, -1).map((s) => ({
-          location: { lat: s.lat, lng: s.lng },
-          stopover: true,
-        })),
-        travelMode: window.google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (status === 'OK') rendererRef.current.setDirections(result);
-      },
-    );
-  }, [ready, stops]);
+    if (stops.length) {
+      const bounds = new LngLatBounds();
+      stops.forEach((s) => bounds.extend([s.lng, s.lat]));
+      line.forEach((coord) => bounds.extend(coord));
+      map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 500 });
+    }
+  }, [ready, stops, route, mapRef]);
 
   const onDrop = useCallback(
     (toIndex) => {
@@ -256,21 +273,20 @@ export default function CrawlPlanner() {
         )}
       </div>
 
-      <div className="card min-w-0 flex-1 overflow-hidden">
-        {!configured || mapsError ? (
-          <div className="flex h-full items-center justify-center p-8 text-center">
-            <div>
-              <RouteIcon size={24} className="mx-auto text-accent" />
-              <p className="mt-2 font-medium">Route map needs a Google Maps API key</p>
-              <p className="mt-1 text-sm text-muted">
-                Set <code className="rounded bg-bg px-1">VITE_GOOGLE_MAPS_API_KEY</code> in{' '}
-                <code className="rounded bg-bg px-1">client/.env</code>. Stops and ordering still work.
-              </p>
-            </div>
+      {/* The canvas stays mounted so the map instance always has its container. */}
+      <div className="card relative min-w-0 flex-1 overflow-hidden">
+        {(!configured || mapsError) && (
+          <div className="absolute inset-0 z-10 bg-surface">
+            <MapNotice
+              bare
+              icon={RouteIcon}
+              title="Route map needs a MapTiler API key"
+              hint="Stops, ordering and ETA still work."
+              error={mapsError}
+            />
           </div>
-        ) : (
-          <div ref={mapEl} className="h-full w-full" />
         )}
+        <div ref={mapEl} className="h-full w-full" />
       </div>
     </div>
   );

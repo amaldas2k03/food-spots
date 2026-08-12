@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { Marker } from 'maplibre-gl';
 import { MapPin, Flame, Pin } from 'lucide-react';
 import * as spotsApi from '../api/spots.js';
 import StarRating from '../components/StarRating.jsx';
+import MapNotice from '../components/MapNotice.jsx';
 import { Spinner, EmptyState } from '../components/Feedback.jsx';
-import { useGoogleMaps, MAP_STYLE, DEFAULT_CENTER } from '../hooks/useGoogleMaps.js';
+import { useMap, DEFAULT_CENTER } from '../hooks/useMap.js';
 import { useGeolocation } from '../hooks/useGeolocation.js';
 import { priceLabel, formatDistance } from '../utils/format.js';
 
+const SPOTS_SOURCE = 'spots';
+const HEATMAP_LAYER = 'spots-heatmap';
+
 export default function MapView() {
-  const { ready, error: mapsError, configured } = useGoogleMaps();
   const { coords, request, loading: geoLoading } = useGeolocation();
 
   const mapEl = useRef(null);
-  const mapRef = useRef(null);
+  const { map: mapRef, ready, error: mapsError, configured } = useMap(mapEl, {
+    center: DEFAULT_CENTER,
+    zoom: 12, // same city-wide framing as the previous Google zoom 13
+  });
   const markersRef = useRef([]);
-  const heatmapRef = useRef(null);
 
   const [spots, setSpots] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -37,24 +43,9 @@ export default function MapView() {
     };
   }, [coords, radius]);
 
-  // Create the map once the API is ready.
-  useEffect(() => {
-    if (!ready || !mapEl.current || mapRef.current) return;
-    mapRef.current = new window.google.maps.Map(mapEl.current, {
-      center: coords ?? DEFAULT_CENTER,
-      zoom: 13,
-      styles: MAP_STYLE,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-    });
-  }, [ready, coords]);
-
-  const clearOverlays = useCallback(() => {
-    markersRef.current.forEach((m) => m.setMap(null));
+  const clearMarkers = useCallback(() => {
+    markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
-    heatmapRef.current?.setMap(null);
-    heatmapRef.current = null;
   }, []);
 
   // Redraw overlays whenever the spots or the view mode change.
@@ -62,72 +53,100 @@ export default function MapView() {
     const map = mapRef.current;
     if (!ready || !map) return;
 
-    clearOverlays();
-    const maps = window.google.maps;
+    clearMarkers();
+
+    // One source feeds both modes; the heatmap reads `weight` from it.
+    const data = {
+      type: 'FeatureCollection',
+      features: spots.map((spot) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [spot.lng, spot.lat] },
+        properties: { weight: Math.max(1, spot.reviewCount ?? 1) },
+      })),
+    };
+    if (map.getSource(SPOTS_SOURCE)) map.getSource(SPOTS_SOURCE).setData(data);
+    else map.addSource(SPOTS_SOURCE, { type: 'geojson', data });
 
     if (mode === 'heatmap') {
-      // Weight by review count, per the spec's heatmap rule.
-      heatmapRef.current = new maps.visualization.HeatmapLayer({
-        data: spots.map((s) => ({
-          location: new maps.LatLng(s.lat, s.lng),
-          weight: Math.max(1, s.reviewCount ?? 1),
-        })),
-        radius: 40,
-        opacity: 0.75,
-        map,
-      });
-    } else {
-      markersRef.current = spots.map((spot) => {
-        const marker = new maps.Marker({
-          position: { lat: spot.lat, lng: spot.lng },
-          map,
-          title: spot.name,
-          icon: {
-            path: maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#E07B39',
-            fillOpacity: 1,
-            strokeColor: '#FFFFFF',
-            strokeWeight: 2,
+      // Weight by review count, per the spec's heatmap rule. Weights are
+      // normalised against the busiest spot so the ramp uses its full range.
+      const maxWeight = Math.max(1, ...data.features.map((f) => f.properties.weight));
+      const weight = ['interpolate', ['linear'], ['get', 'weight'], 0, 0, maxWeight, 1];
+
+      if (map.getLayer(HEATMAP_LAYER)) {
+        map.setPaintProperty(HEATMAP_LAYER, 'heatmap-weight', weight);
+      } else {
+        map.addLayer({
+          id: HEATMAP_LAYER,
+          type: 'heatmap',
+          source: SPOTS_SOURCE,
+          paint: {
+            'heatmap-weight': weight,
+            // Radius in screen pixels and a flat intensity, matching the
+            // density falloff the previous heatmap rendered.
+            'heatmap-radius': 40,
+            'heatmap-intensity': 1,
+            'heatmap-opacity': 0.75,
+            'heatmap-color': [
+              'interpolate',
+              ['linear'],
+              ['heatmap-density'],
+              0, 'rgba(0,255,255,0)',
+              0.1, 'rgba(0,255,255,1)',
+              0.25, 'rgba(0,127,255,1)',
+              0.45, 'rgba(0,0,255,1)',
+              0.65, 'rgba(0,0,159,1)',
+              0.8, 'rgba(127,0,63,1)',
+              1, 'rgba(255,0,0,1)',
+            ],
           },
         });
-        marker.addListener('click', () => {
+      }
+    } else {
+      if (map.getLayer(HEATMAP_LAYER)) map.removeLayer(HEATMAP_LAYER);
+
+      markersRef.current = spots.map((spot) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.title = spot.name;
+        el.setAttribute('aria-label', spot.name);
+        el.className =
+          'h-4 w-4 cursor-pointer rounded-full border-2 border-white bg-accent shadow-card';
+        el.addEventListener('click', () => {
           setSelected(spot);
-          map.panTo({ lat: spot.lat, lng: spot.lng });
+          map.panTo([spot.lng, spot.lat]);
         });
-        return marker;
+        return new Marker({ element: el }).setLngLat([spot.lng, spot.lat]).addTo(map);
       });
     }
 
-    return clearOverlays;
-  }, [ready, spots, mode, clearOverlays]);
+    return clearMarkers;
+  }, [ready, spots, mode, clearMarkers, mapRef]);
 
   // Recentre when the user shares their location.
   useEffect(() => {
-    if (coords && mapRef.current) mapRef.current.panTo(coords);
-  }, [coords]);
+    if (coords && mapRef.current) mapRef.current.panTo([coords.lng, coords.lat]);
+  }, [coords, mapRef]);
 
   return (
     <div className="flex h-[calc(100vh-var(--spacing-navbar))]">
       <div className="relative w-[70%]">
+        {/* Both states overlay the canvas so it keeps its container and size. */}
         {!configured || mapsError ? (
-          <div className="flex h-full items-center justify-center p-8">
-            <div className="card max-w-md p-6 text-center">
-              <MapPin size={24} className="mx-auto text-accent" />
-              <p className="mt-2 font-medium">Map needs a Google Maps API key</p>
-              <p className="mt-1 text-sm text-muted">
-                Set <code className="rounded bg-bg px-1">VITE_GOOGLE_MAPS_API_KEY</code> in{' '}
-                <code className="rounded bg-bg px-1">client/.env</code> and reload. The spot list on
-                the right works without it.
-              </p>
-              {mapsError && <p className="mt-2 text-xs text-red-600">{mapsError}</p>}
-            </div>
+          <div className="absolute inset-0 bg-bg">
+            <MapNotice
+              title="Map needs a MapTiler API key"
+              hint="The spot list on the right works without it."
+              error={mapsError}
+            />
           </div>
         ) : !ready ? (
-          <Spinner label="Loading map…" />
+          <div className="absolute inset-0 bg-bg">
+            <Spinner label="Loading map…" />
+          </div>
         ) : null}
 
-        <div ref={mapEl} className={`h-full w-full ${!configured || mapsError ? 'hidden' : ''}`} />
+        <div ref={mapEl} className="h-full w-full" />
 
         {/* Floating controls sit above the map canvas. */}
         <div className="absolute top-4 left-4 flex gap-2">
@@ -236,7 +255,7 @@ export default function MapView() {
                   type="button"
                   onClick={() => {
                     setSelected(spot);
-                    mapRef.current?.panTo({ lat: spot.lat, lng: spot.lng });
+                    mapRef.current?.panTo([spot.lng, spot.lat]);
                   }}
                   className="flex w-full gap-3 p-3 text-left hover:bg-bg"
                 >

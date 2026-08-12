@@ -47,8 +47,10 @@ cd server && npx prisma migrate dev --name init && npm run seed
 cd client && npm install && cp .env.example .env
 ```
 
-`VITE_GOOGLE_MAPS_API_KEY` enables the map and heatmap pages. Every other page works
-without it; map pages show a configuration notice instead.
+`VITE_MAPTILER_KEY` enables the map and heatmap pages — the client renders tiles with
+MapLibre GL JS against [MapTiler Cloud](https://cloud.maptiler.com/account/keys/).
+Every other page works without it; map pages show a configuration notice instead.
+(Routing stays on the Google Directions API server-side, via `GOOGLE_MAPS_SERVER_KEY`.)
 
 ### 4. Run
 

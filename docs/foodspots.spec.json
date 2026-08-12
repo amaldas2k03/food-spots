@@ -10,7 +10,7 @@
   "tech_stack": {
     "frontend": "React + Tailwind CSS + React Router v6",
     "state_management": "Zustand",
-    "maps": "Google Maps JavaScript API (Places, Directions, Heatmap layer)",
+    "maps": "MapLibre GL JS + MapTiler Cloud tiles (basemap, markers, heatmap layer) on the client; Google Directions API server-side for crawl routing",
     "backend": "Node.js + Express",
     "database": "PostgreSQL + Prisma ORM",
     "auth": "JWT (email/password) + Google OAuth 2.0",
@@ -109,7 +109,7 @@
     {
       "route": "/crawl",
       "name": "Food Crawl Planner",
-      "layout": "Left panel: spot picker + ordered list. Right panel: route on Google Map",
+      "layout": "Left panel: spot picker + ordered list. Right panel: route drawn on a MapTiler map",
       "features": [
         "Search and add spots to crawl",
         "Drag to reorder stops",
@@ -217,7 +217,7 @@
     "verified_visit": "On review submit, compare user's submitted GPS coords with spot lat/lng. If distance < 100m, set verified_visit = true and award +1 bonus point.",
     "trending": "Spots sorted by review count in last 7 days DESC.",
     "hidden_gems": "Spots with avg_rating >= 4.5 AND review_count < 20.",
-    "heatmap": "Pass all spot lat/lng coordinates as weighted points to Google Maps Heatmap layer, weight = review_count.",
+    "heatmap": "Pass all spot lat/lng coordinates as a GeoJSON source to a MapLibre heatmap layer, heatmap-weight = review_count (normalised against the busiest spot in view).",
     "food_crawl": "Use Google Directions API with mode=driving and waypoints[] to compute route, total distance, and ETA.",
     "points_system": {
       "review_submitted": 1,
@@ -244,9 +244,14 @@
       "body": "Inter (all UI text)",
       "size_scale": "12 / 14 / 16 / 20 / 28 / 36px"
     },
-    "map_style": "Minimal greyscale Google Maps style so pins and heatmap stand out",
+    "map_style": "MapTiler 'streets-v2' style JSON so pins and heatmap stand out",
     "component_style": "Rounded cards (radius 12px), subtle shadow, no heavy borders"
   },
+
+  "deviations": [
+    "Map tile rendering, markers and the heatmap use MapLibre GL JS against MapTiler Cloud (VITE_MAPTILER_KEY) instead of the Google Maps JavaScript API. Rationale: no Google Maps JS billing/loader on the client, and MapLibre ships a native heatmap layer.",
+    "The crawl route is still computed by the Google Directions API on the server (GOOGLE_MAPS_SERVER_KEY); the client only decodes the returned overview polyline and draws it as a MapLibre line layer. Stop ordering is unchanged — the user's drag order is sent as-is."
+  ],
 
   "android_note": "Android / React Native implementation is deferred. Backend API is built REST-first so it can be consumed by a mobile client later with zero changes. No mobile-specific logic in the backend."
 }
