@@ -1,0 +1,243 @@
+// FoodSpots data model.
+// Prisma fields are camelCase; columns are mapped to snake_case to match the spec.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String?  @map("password_hash") // null for Google-only accounts
+  googleId     String?  @unique @map("google_id")
+  avatarUrl    String?  @map("avatar_url")
+  tasteProfile String[] @map("taste_profile") // cuisine preferences picked at onboarding
+  points       Int      @default(0)
+  badges       String[]
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  reviews       Review[]
+  ownedSpots    Spot[]         @relation("SpotOwner")
+  lists         CuratedList[]
+  crawls        FoodCrawl[]
+  notifications Notification[]
+  reviewVotes   ReviewVote[]
+  following     Follow[]       @relation("Follower")
+  followers     Follow[]       @relation("Following")
+  activities    Activity[]
+
+  @@map("users")
+}
+
+model Spot {
+  id           String   @id @default(cuid())
+  name         String
+  lat          Float
+  lng          Float
+  address      String
+  cuisineType  String[] @map("cuisine_type")
+  priceRange   Int      @map("price_range") // 1-4
+  dietaryTags  String[] @map("dietary_tags")
+  overallRating Float   @default(0) @map("overall_rating")
+  reviewCount  Int      @default(0) @map("review_count")
+  hours        Json? // { mon: { open: "09:00", close: "22:00" }, ... }
+  ownerUserId  String?  @map("owner_user_id")
+  photos       String[]
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  owner      User?           @relation("SpotOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  dishes     Dish[]
+  reviews    Review[]
+  listSpots  ListSpot[]
+  crawlStops CrawlStop[]
+
+  @@index([lat, lng])
+  @@map("spots")
+}
+
+model Dish {
+  id          String   @id @default(cuid())
+  spotId      String   @map("spot_id")
+  name        String
+  description String?
+  avgRating   Float    @default(0) @map("avg_rating")
+  photoUrl    String?  @map("photo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  spot    Spot         @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  ratings DishRating[]
+
+  @@index([spotId])
+  @@map("dishes")
+}
+
+model Review {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  spotId          String   @map("spot_id")
+  overallRating   Int      @map("overall_rating") // 1-5
+  text            String
+  photos          String[]
+  videoUrl        String?  @map("video_url")
+  verifiedVisit   Boolean  @default(false) @map("verified_visit")
+  helpfulCount    Int      @default(0) @map("helpful_count")
+  notHelpfulCount Int      @default(0) @map("not_helpful_count")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spot          Spot           @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  dishRatings   DishRating[]
+  votes         ReviewVote[]
+  ownerResponse OwnerResponse?
+
+  @@unique([userId, spotId]) // one review per user per spot
+  @@index([spotId, createdAt])
+  @@map("reviews")
+}
+
+model DishRating {
+  id       String @id @default(cuid())
+  reviewId String @map("review_id")
+  dishId   String @map("dish_id")
+  rating   Int // 1-5
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  dish   Dish   @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, dishId])
+  @@map("dish_ratings")
+}
+
+// Not in the original spec's model list, but POST /reviews/:id/helpful needs to be
+// idempotent per user. Counters on Review stay denormalized for cheap reads.
+model ReviewVote {
+  id       String   @id @default(cuid())
+  reviewId String   @map("review_id")
+  userId   String   @map("user_id")
+  helpful  Boolean // true = helpful, false = not helpful
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@map("review_votes")
+}
+
+model OwnerResponse {
+  id        String   @id @default(cuid())
+  reviewId  String   @unique @map("review_id")
+  text      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("owner_responses")
+}
+
+model CuratedList {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  title       String
+  description String?
+  coverPhoto  String?  @map("cover_photo")
+  isPublic    Boolean  @default(true) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spots ListSpot[]
+
+  @@index([userId])
+  @@map("curated_lists")
+}
+
+// Join table replaces the spec's spot_ids[] — gives referential integrity,
+// dedupe, and lets us `include` full spot records in one query.
+model ListSpot {
+  listId  String   @map("list_id")
+  spotId  String   @map("spot_id")
+  addedAt DateTime @default(now()) @map("added_at")
+
+  list CuratedList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  spot Spot        @relation(fields: [spotId], references: [id], onDelete: Cascade)
+
+  @@id([listId, spotId])
+  @@map("list_spots")
+}
+
+model FoodCrawl {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  title         String
+  totalEta      Int?     @map("total_eta") // seconds
+  totalDistance Int?     @map("total_distance") // meters
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stops CrawlStop[]
+
+  @@index([userId])
+  @@map("food_crawls")
+}
+
+// Replaces spots_ordered[] — `position` makes the ordering explicit and sortable.
+model CrawlStop {
+  crawlId  String @map("crawl_id")
+  spotId   String @map("spot_id")
+  position Int
+
+  crawl FoodCrawl @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  spot  Spot      @relation(fields: [spotId], references: [id], onDelete: Cascade)
+
+  @@id([crawlId, spotId])
+  @@index([crawlId, position])
+  @@map("crawl_stops")
+}
+
+model Follow {
+  followerId  String   @map("follower_id")
+  followingId String   @map("following_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+// Backs GET /api/feed. The spec lists four feed item types; storing them as
+// rows keeps the feed query a simple indexed read instead of a UNION across tables.
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String // review_created | spot_saved | list_created | crawl_created
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("activities")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String
+  payload   Json
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}

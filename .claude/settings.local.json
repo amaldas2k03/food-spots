@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(git --version)",
+      "Bash(psql --version)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(48\\).toString\\('hex'\\)\\)\")",
+      "Bash(sed -e 's|change-me-to-a-long-random-string|__TRACKED_VAR__|' .env.example)",
+      "PowerShell(gh --version)",
+      "PowerShell(gh auth status)"
+    ]
+  }
+}

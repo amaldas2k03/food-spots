@@ -1,0 +1,252 @@
+{
+  "project": {
+    "name": "FoodSpots",
+    "type": "web",
+    "platforms": ["web (PC-first, responsive)"],
+    "purpose": "Food spot discovery, reviews, and social recommendations — web only for now",
+    "ui_goal": "Clean, functional desktop UI for testing. Mobile responsiveness is low priority."
+  },
+
+  "tech_stack": {
+    "frontend": "React + Tailwind CSS + React Router v6",
+    "state_management": "Zustand",
+    "maps": "Google Maps JavaScript API (Places, Directions, Heatmap layer)",
+    "backend": "Node.js + Express",
+    "database": "PostgreSQL + Prisma ORM",
+    "auth": "JWT (email/password) + Google OAuth 2.0",
+    "media_storage": "Cloudinary (review photos and videos)",
+    "file_uploads": "Multer (middleware before Cloudinary upload)",
+    "realtime": "Socket.io (notifications)",
+    "api_style": "REST"
+  },
+
+  "project_structure": {
+    "frontend": {
+      "root": "client/",
+      "folders": [
+        "src/pages/",
+        "src/components/",
+        "src/hooks/",
+        "src/store/ (Zustand slices)",
+        "src/api/ (axios instances per resource)",
+        "src/utils/",
+        "src/assets/"
+      ]
+    },
+    "backend": {
+      "root": "server/",
+      "folders": [
+        "routes/",
+        "controllers/",
+        "middleware/ (auth, upload, locationVerify)",
+        "prisma/schema.prisma",
+        "utils/",
+        "services/ (maps.service.js, cloudinary.service.js)"
+      ]
+    }
+  },
+
+  "pages": [
+    {
+      "route": "/",
+      "name": "Home",
+      "layout": "Sidebar nav (left) + main content area",
+      "sections": [
+        "Trending Spots (horizontal scroll card row)",
+        "Hidden Gems (horizontal scroll card row)",
+        "Friends Activity Feed (vertical list)"
+      ]
+    },
+    {
+      "route": "/map",
+      "name": "Map View",
+      "layout": "Full-width map (70%) + right panel (30%) showing spot list",
+      "features": [
+        "Spot pins on map",
+        "Click pin to preview spot in right panel",
+        "Radius slider for near-me search",
+        "Toggle: Heatmap view / Pin view"
+      ]
+    },
+    {
+      "route": "/search",
+      "name": "Search & Discovery",
+      "layout": "Search bar top + filter sidebar (left) + results grid",
+      "filters": [
+        "Cuisine type (multi-select chips)",
+        "Price range ($ $$ $$$ $$$$)",
+        "Dietary needs (Vegan, Halal, Gluten-Free, Vegetarian)",
+        "Min rating (star selector)",
+        "Distance radius (slider, requires location)"
+      ],
+      "search_scope": "Searches both dish names and spot names"
+    },
+    {
+      "route": "/spots/:id",
+      "name": "Spot Detail",
+      "layout": "Hero photo + info column (left 60%) + map mini + actions (right 40%)",
+      "sections": [
+        "SpotHeader: name, cuisine tags, price range, open/closed badge, overall rating",
+        "QuickActions: Get Directions button, Save to List button, Share button",
+        "Dishes tab: dish cards with name, photo, avg dish rating",
+        "Reviews tab: review cards with author, rating, verified badge, photos, helpful votes",
+        "Owner Response: shown below review if owner replied"
+      ]
+    },
+    {
+      "route": "/spots/:id/review/new",
+      "name": "Write Review",
+      "layout": "Centered form, single column",
+      "fields": [
+        "Overall star rating (1-5, required)",
+        "Review text (textarea, required)",
+        "Dish ratings (optional — pick dishes from spot's dish list, rate each)",
+        "Photo upload (multi-image, Cloudinary)",
+        "Video upload (optional, max 60s)",
+        "Verified visit: auto GPS check, show green badge if within 100m of spot"
+      ]
+    },
+    {
+      "route": "/crawl",
+      "name": "Food Crawl Planner",
+      "layout": "Left panel: spot picker + ordered list. Right panel: route on Google Map",
+      "features": [
+        "Search and add spots to crawl",
+        "Drag to reorder stops",
+        "Live ETA and distance update via Google Directions API (waypoints)",
+        "Save crawl with a title"
+      ]
+    },
+    {
+      "route": "/lists",
+      "name": "Curated Lists",
+      "layout": "Grid of list cards + Create List button top-right",
+      "features": [
+        "Create named public/private list",
+        "Add spots to a list from Spot Detail page",
+        "View list: shows all spots in that list as cards"
+      ]
+    },
+    {
+      "route": "/social",
+      "name": "Social Feed",
+      "layout": "Two-column: activity feed (left) + suggested users to follow (right)",
+      "feed_items": [
+        "User left a review on [Spot]",
+        "User saved [Spot] to a list",
+        "User created a new list: [Title]",
+        "User started a food crawl"
+      ]
+    },
+    {
+      "route": "/leaderboard",
+      "name": "Leaderboard",
+      "layout": "Full-width ranked table + badge legend below",
+      "columns": ["Rank", "User", "Points", "Reviews", "Verified Reviews", "Badges"]
+    },
+    {
+      "route": "/profile/:id",
+      "name": "User Profile",
+      "layout": "Profile header + tabbed sections below",
+      "tabs": [
+        "Reviews (grid of review cards)",
+        "Lists (grid of list cards)",
+        "Badges (badge showcase)",
+        "Food Crawls (saved crawls)"
+      ]
+    },
+    {
+      "route": "/login",
+      "name": "Login",
+      "layout": "Centered card",
+      "options": ["Email + password", "Continue with Google"]
+    },
+    {
+      "route": "/register",
+      "name": "Register",
+      "layout": "Centered card + onboarding step: pick cuisine preferences"
+    }
+  ],
+
+  "shared_components": [
+    "Navbar (top): Logo, Search bar, Notifications bell, User avatar menu",
+    "Sidebar (left): Home, Map, Search, Crawl, Lists, Social, Leaderboard",
+    "SpotCard: photo, name, cuisine, rating, price range, distance",
+    "ReviewCard: avatar, name, verified badge, star rating, text, photos, helpful buttons",
+    "DishCard: dish photo, name, avg rating",
+    "ListCard: cover photo, title, spot count, author",
+    "Notification dropdown: real-time via Socket.io"
+  ],
+
+  "data_models": {
+    "User": ["id", "name", "email", "password_hash", "avatar_url", "taste_profile[]", "points", "badges[]", "created_at"],
+    "Spot": ["id", "name", "lat", "lng", "address", "cuisine_type[]", "price_range (1-4)", "dietary_tags[]", "overall_rating", "review_count", "hours", "owner_user_id", "photos[]"],
+    "Dish": ["id", "spot_id", "name", "description", "avg_rating", "photo_url"],
+    "Review": ["id", "user_id", "spot_id", "overall_rating", "text", "photos[]", "video_url", "verified_visit (bool)", "helpful_count", "not_helpful_count", "created_at"],
+    "DishRating": ["id", "review_id", "dish_id", "rating"],
+    "CuratedList": ["id", "user_id", "title", "description", "spot_ids[]", "is_public"],
+    "FoodCrawl": ["id", "user_id", "title", "spots_ordered[]", "total_eta", "total_distance"],
+    "Follow": ["follower_id", "following_id"],
+    "Notification": ["id", "user_id", "type", "payload (JSON)", "read (bool)", "created_at"]
+  },
+
+  "api_endpoints": {
+    "auth": ["POST /api/auth/register", "POST /api/auth/login", "POST /api/auth/google", "GET /api/auth/me"],
+    "spots": [
+      "GET /api/spots?lat&lng&radius&cuisine&price&dietary&sort&q",
+      "GET /api/spots/trending",
+      "GET /api/spots/hidden-gems",
+      "GET /api/spots/:id",
+      "POST /api/spots"
+    ],
+    "reviews": [
+      "GET /api/spots/:id/reviews",
+      "POST /api/spots/:id/reviews",
+      "POST /api/reviews/:id/helpful",
+      "POST /api/reviews/:id/not-helpful",
+      "POST /api/reviews/:id/owner-response"
+    ],
+    "dishes": ["GET /api/spots/:id/dishes", "POST /api/spots/:id/dishes"],
+    "lists": ["GET /api/lists", "POST /api/lists", "GET /api/lists/:id", "POST /api/lists/:id/spots", "DELETE /api/lists/:id/spots/:spotId"],
+    "crawls": ["POST /api/crawls", "GET /api/crawls/:id", "GET /api/crawls/:id/route"],
+    "social": ["POST /api/users/:id/follow", "DELETE /api/users/:id/follow", "GET /api/feed", "GET /api/leaderboard"],
+    "notifications": ["GET /api/notifications", "PATCH /api/notifications/:id/read"]
+  },
+
+  "feature_logic": {
+    "verified_visit": "On review submit, compare user's submitted GPS coords with spot lat/lng. If distance < 100m, set verified_visit = true and award +1 bonus point.",
+    "trending": "Spots sorted by review count in last 7 days DESC.",
+    "hidden_gems": "Spots with avg_rating >= 4.5 AND review_count < 20.",
+    "heatmap": "Pass all spot lat/lng coordinates as weighted points to Google Maps Heatmap layer, weight = review_count.",
+    "food_crawl": "Use Google Directions API with mode=driving and waypoints[] to compute route, total distance, and ETA.",
+    "points_system": {
+      "review_submitted": 1,
+      "verified_review": 2,
+      "helpful_vote_received": 1,
+      "list_created": 5,
+      "crawl_created": 3
+    }
+  },
+
+  "ui_design": {
+    "layout": "Fixed left sidebar (220px) + top navbar (60px) + scrollable main content",
+    "color_palette": {
+      "background": "#F9F6F1",
+      "surface": "#FFFFFF",
+      "primary_accent": "#E07B39",
+      "text_primary": "#1C1C1C",
+      "text_secondary": "#6B6B6B",
+      "success": "#3DBE7A",
+      "border": "#E5E0D8"
+    },
+    "typography": {
+      "display": "Playfair Display (spot names, headings)",
+      "body": "Inter (all UI text)",
+      "size_scale": "12 / 14 / 16 / 20 / 28 / 36px"
+    },
+    "map_style": "Minimal greyscale Google Maps style so pins and heatmap stand out",
+    "component_style": "Rounded cards (radius 12px), subtle shadow, no heavy borders"
+  },
+
+  "android_note": "Android / React Native implementation is deferred. Backend API is built REST-first so it can be consumed by a mobile client later with zero changes. No mobile-specific logic in the backend."
+}
