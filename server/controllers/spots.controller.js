@@ -111,14 +111,16 @@ export async function hiddenGems(req, res) {
   res.json({ spots });
 }
 
+const SPOT_DETAIL_INCLUDE = {
+  dishes: { orderBy: { avgRating: 'desc' } },
+  owner: { select: { id: true, name: true, avatarUrl: true } },
+  _count: { select: { reviews: true } },
+};
+
 export async function getSpot(req, res) {
   const spot = await prisma.spot.findUnique({
     where: { id: req.params.id },
-    include: {
-      dishes: { orderBy: { avgRating: 'desc' } },
-      owner: { select: { id: true, name: true, avatarUrl: true } },
-      _count: { select: { reviews: true } },
-    },
+    include: SPOT_DETAIL_INCLUDE,
   });
   if (!spot) throw new HttpError(404, 'Spot not found');
   res.json({ spot });
@@ -132,7 +134,8 @@ const createSpotSchema = z.object({
   cuisineType: z.array(z.string()).default([]),
   priceRange: z.number().int().min(1).max(4),
   dietaryTags: z.array(z.string()).default([]),
-  hours: z.record(z.any()).optional(),
+  hours: z.record(z.any()).nullable().optional(), // null clears a published schedule
+
   photos: z.array(z.string().url()).default([]),
   claimOwnership: z.boolean().default(false),
 });
@@ -140,7 +143,76 @@ const createSpotSchema = z.object({
 export async function createSpot(req, res) {
   const { claimOwnership, ...data } = createSpotSchema.parse(req.body);
   const spot = await prisma.spot.create({
-    data: { ...data, ownerUserId: claimOwnership ? req.user.id : null },
+    data: {
+      ...data,
+      ownerUserId: claimOwnership ? req.user.id : null,
+      // Recorded whether or not ownership was claimed — this is what lets the
+      // person who added an unclaimed spot come back and fix it.
+      createdByUserId: req.user.id,
+    },
   });
   res.status(201).json({ spot });
+}
+
+// Same shape as create, every field optional: a PATCH may carry only what changed.
+const updateSpotSchema = createSpotSchema.partial();
+
+/**
+ * Edit rights are the claimed owner, or — while nobody has claimed the place —
+ * the user who added it. Spots with neither (the seed data) are read-only,
+ * which is deliberate: without revision history, letting any signed-in account
+ * rewrite any unclaimed spot gives no way to notice or undo the damage.
+ */
+async function assertSpotEditor(spotId, userId) {
+  const spot = await prisma.spot.findUnique({
+    where: { id: spotId },
+    select: { id: true, name: true, ownerUserId: true, createdByUserId: true },
+  });
+  if (!spot) throw new HttpError(404, 'Spot not found');
+
+  const isOwner = spot.ownerUserId !== null && spot.ownerUserId === userId;
+  const isAdderOfUnclaimed = spot.ownerUserId === null && spot.createdByUserId === userId;
+  if (!isOwner && !isAdderOfUnclaimed) {
+    throw new HttpError(403, 'You can only edit spots you added or own');
+  }
+  return spot;
+}
+
+export async function updateSpot(req, res) {
+  const { claimOwnership, ...data } = updateSpotSchema.parse(req.body);
+  await assertSpotEditor(req.params.id, req.user.id);
+
+  const spot = await prisma.spot.update({
+    where: { id: req.params.id },
+    // Omitted keys parse to undefined, which Prisma leaves untouched. Ownership
+    // only moves when the caller sends the flag, and only ever to themselves.
+    data: {
+      ...data,
+      ...(claimOwnership === undefined
+        ? {}
+        : { ownerUserId: claimOwnership ? req.user.id : null }),
+    },
+    include: SPOT_DETAIL_INCLUDE,
+  });
+
+  res.json({ spot });
+}
+
+export async function deleteSpot(req, res) {
+  const spot = await assertSpotEditor(req.params.id, req.user.id);
+
+  // Deleting a spot cascades to its reviews, dishes, list entries and crawl
+  // stops, so a spot other people have written about is not the owner's to
+  // remove. Counted rather than read off the denormalised reviewCount column.
+  const reviewCount = await prisma.review.count({ where: { spotId: spot.id } });
+  if (reviewCount > 0) {
+    throw new HttpError(
+      409,
+      `This spot has ${reviewCount} review${reviewCount === 1 ? '' : 's'} and cannot be deleted. ` +
+        'Editing it is still fine.',
+    );
+  }
+
+  await prisma.spot.delete({ where: { id: spot.id } });
+  res.json({ ok: true });
 }

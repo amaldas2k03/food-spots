@@ -178,6 +178,9 @@ async function main() {
         ...spotData,
         // Give two spots an owner so the owner-response flow is exercisable.
         ownerUserId: i < 2 ? users[i].id : null,
+        // The next two are unclaimed but attributed, so the "added by me" edit
+        // path has something to act on too. The rest stay read-only.
+        createdByUserId: i < 4 ? users[i % users.length].id : null,
         hours: {
           mon: { open: '08:00', close: '22:00' }, tue: { open: '08:00', close: '22:00' },
           wed: { open: '08:00', close: '22:00' }, thu: { open: '08:00', close: '22:00' },

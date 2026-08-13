@@ -83,7 +83,7 @@ Everything is mounted under `/api` (see `server/routes/index.js`):
 | Prefix | Covers |
 |---|---|
 | `/auth` | `register`, `login`, `google`, `me` |
-| `/spots` | Search and radius lookup, `trending`, `hidden-gems`, spot detail, dishes, and `:id/reviews` — which is where a review is created, with media and GPS coords in one multipart request |
+| `/spots` | Search and radius lookup, `trending`, `hidden-gems`, spot detail, create/edit/delete, dishes, and `:id/reviews` — which is where a review is created, with media and GPS coords in one multipart request |
 | `/reviews` | `:id/helpful`, `:id/not-helpful`, `:id/owner-response` |
 | `/lists` | Curated lists, plus adding and removing their spots |
 | `/crawls` | Create a crawl, `preview` a route before saving, `:id/route` for the saved one |
@@ -106,6 +106,10 @@ Everything is mounted under `/api` (see `server/routes/index.js`):
 - **Food crawl** — ordered stops sent to the Google Directions API as waypoints;
   ordering is preserved rather than optimised, since the user drags stops themselves.
 - **Points** — review +1, verified review +2, helpful vote received +1, list +5, crawl +3.
+- **Editing a spot** — `PATCH /api/spots/:id` and `DELETE /api/spots/:id` are open to the
+  claimed `owner_user_id`, or to `created_by_user_id` while nobody has claimed the place.
+  Delete is refused with 409 once the spot has reviews, since the cascade would take
+  those reviews, its dishes, list entries and crawl stops with it.
 
 ## Schema notes
 
@@ -118,3 +122,6 @@ Three places deviate from the spec's model list, all to fit a relational databas
   user. The `helpful_count` counters on `Review` remain for cheap reads.
 - An `activities` table backs `GET /api/feed`, keeping the feed a single indexed read
   instead of a UNION across reviews, lists, and crawls.
+- `Spot.created_by_user_id` was added alongside `owner_user_id`. Ownership is a claim
+  the adder opts into, so without it a spot added without ticking "I own or manage this
+  place" would have no one able to edit it.

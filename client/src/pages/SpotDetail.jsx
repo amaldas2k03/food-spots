@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Navigation, Bookmark, Share2, Clock, PenLine, Check } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Navigation, Bookmark, Share2, Clock, PenLine, Check, Pencil, Trash2 } from 'lucide-react';
 import * as spotsApi from '../api/spots.js';
 import * as reviewsApi from '../api/reviews.js';
 import * as listsApi from '../api/lists.js';
@@ -10,6 +10,7 @@ import ReviewCard from '../components/ReviewCard.jsx';
 import { Spinner, ErrorState, EmptyState } from '../components/Feedback.jsx';
 import { useAuthStore } from '../store/authStore.js';
 import { priceLabel, isOpenNow } from '../utils/format.js';
+import { canEditSpot } from '../utils/permissions.js';
 
 function SaveToListMenu({ spotId, onClose }) {
   const [lists, setLists] = useState(null);
@@ -68,6 +69,7 @@ function SaveToListMenu({ spotId, onClose }) {
 
 export default function SpotDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
   const [spot, setSpot] = useState(null);
@@ -76,6 +78,8 @@ export default function SpotDetail() {
   const [state, setState] = useState({ loading: true, error: null });
   const [saveOpen, setSaveOpen] = useState(false);
   const [shared, setShared] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState({ busy: false, error: null });
 
   const load = useCallback(async () => {
     setState({ loading: true, error: null });
@@ -99,12 +103,28 @@ export default function SpotDetail() {
 
   const open = isOpenNow(spot.hours);
   const isOwner = user && spot.ownerUserId === user.id;
+  const canEdit = canEditSpot(spot, user);
   const alreadyReviewed = reviews.some((r) => r.user?.id === user?.id);
+  // _count comes from the detail query; reviewCount is the denormalised column.
+  const reviewCount = spot._count?.reviews ?? spot.reviewCount ?? 0;
 
   async function share() {
     await navigator.clipboard.writeText(window.location.href).catch(() => {});
     setShared(true);
     setTimeout(() => setShared(false), 2000);
+  }
+
+  async function remove() {
+    setDeleting({ busy: true, error: null });
+    try {
+      await spotsApi.deleteSpot(spot.id);
+      navigate('/map', { replace: true });
+    } catch (err) {
+      // Reviews may have landed since the page loaded, in which case the
+      // server refuses with 409 even though the button looked enabled.
+      setDeleting({ busy: false, error: err.message });
+      setConfirmDelete(false);
+    }
   }
 
   return (
@@ -250,6 +270,69 @@ export default function SpotDetail() {
               </Link>
             )}
           </div>
+
+          {canEdit && (
+            <div className="card space-y-2 p-4">
+              <p className="text-xs font-medium text-muted">
+                {isOwner ? 'You own this spot' : 'You added this spot'}
+              </p>
+
+              <Link
+                to={`/spots/${spot.id}/edit`}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm hover:border-accent"
+              >
+                <Pencil size={15} /> Edit spot
+              </Link>
+
+              {confirmDelete ? (
+                <>
+                  <p className="text-xs text-muted">
+                    Delete “{spot.name}” for everyone? This can't be undone.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={remove}
+                      disabled={deleting.busy}
+                      className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {deleting.busy ? 'Deleting…' : 'Delete'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 rounded-lg border border-line px-3 py-2 text-sm hover:border-accent"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={reviewCount > 0}
+                  title={
+                    reviewCount > 0
+                      ? 'Spots with reviews cannot be deleted'
+                      : 'Delete this spot'
+                  }
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm text-red-600 hover:border-red-600 disabled:opacity-50 disabled:hover:border-line"
+                >
+                  <Trash2 size={15} /> Delete spot
+                </button>
+              )}
+
+              {reviewCount > 0 && !confirmDelete && (
+                <p className="text-xs text-muted">
+                  Deleting would take its reviews and dishes with it, so spots with reviews stay
+                  put. You can still edit this one.
+                </p>
+              )}
+
+              {deleting.error && <p className="text-xs text-red-600">{deleting.error}</p>}
+            </div>
+          )}
 
           {/* Static map preview keeps this panel useful without loading the full JS API. */}
           <div className="card overflow-hidden">

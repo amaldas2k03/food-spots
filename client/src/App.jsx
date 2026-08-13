@@ -10,6 +10,8 @@ import Home from './pages/Home.jsx';
 import MapView from './pages/MapView.jsx';
 import SearchPage from './pages/SearchPage.jsx';
 import SpotDetail from './pages/SpotDetail.jsx';
+import AddSpot from './pages/AddSpot.jsx';
+import EditSpot from './pages/EditSpot.jsx';
 import WriteReview from './pages/WriteReview.jsx';
 import CrawlPlanner from './pages/CrawlPlanner.jsx';
 import Lists from './pages/Lists.jsx';
@@ -60,7 +62,25 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/search" element={<SearchPage />} />
+        {/* Router ranking puts the static "new" ahead of /spots/:id already;
+            it is listed first here to keep the spot routes reading in order. */}
+        <Route
+          path="/spots/new"
+          element={
+            <RequireAuth>
+              <AddSpot />
+            </RequireAuth>
+          }
+        />
         <Route path="/spots/:id" element={<SpotDetail />} />
+        <Route
+          path="/spots/:id/edit"
+          element={
+            <RequireAuth>
+              <EditSpot />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/spots/:id/review/new"
           element={

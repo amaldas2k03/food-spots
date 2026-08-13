@@ -5,4 +5,6 @@ export const getTrending = () => api.get('/spots/trending').then((r) => r.data.s
 export const getHiddenGems = () => api.get('/spots/hidden-gems').then((r) => r.data.spots);
 export const getSpot = (id) => api.get(`/spots/${id}`).then((r) => r.data.spot);
 export const createSpot = (data) => api.post('/spots', data).then((r) => r.data.spot);
+export const updateSpot = (id, data) => api.patch(`/spots/${id}`, data).then((r) => r.data.spot);
+export const deleteSpot = (id) => api.delete(`/spots/${id}`).then((r) => r.data);
 export const getDishes = (id) => api.get(`/spots/${id}/dishes`).then((r) => r.data.dishes);
