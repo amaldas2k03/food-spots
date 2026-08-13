@@ -24,6 +24,7 @@ model User {
 
   reviews       Review[]
   ownedSpots    Spot[]         @relation("SpotOwner")
+  addedSpots    Spot[]         @relation("SpotCreator")
   lists         CuratedList[]
   crawls        FoodCrawl[]
   notifications Notification[]
@@ -47,11 +48,13 @@ model Spot {
   overallRating Float   @default(0) @map("overall_rating")
   reviewCount  Int      @default(0) @map("review_count")
   hours        Json? // { mon: { open: "09:00", close: "22:00" }, ... }
-  ownerUserId  String?  @map("owner_user_id")
+  ownerUserId  String?  @map("owner_user_id") // set only when the adder claims the place
+  createdByUserId String? @map("created_by_user_id") // who added it, claimed or not
   photos       String[]
   createdAt    DateTime @default(now()) @map("created_at")
 
   owner      User?           @relation("SpotOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  createdBy  User?           @relation("SpotCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   dishes     Dish[]
   reviews    Review[]
   listSpots  ListSpot[]

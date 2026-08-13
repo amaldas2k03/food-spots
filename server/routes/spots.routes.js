@@ -16,6 +16,8 @@ router.get('/hidden-gems', asyncHandler(spots.hiddenGems));
 router.get('/', asyncHandler(spots.listSpots));
 router.post('/', requireAuth, asyncHandler(spots.createSpot));
 router.get('/:id', asyncHandler(spots.getSpot));
+router.patch('/:id', requireAuth, asyncHandler(spots.updateSpot));
+router.delete('/:id', requireAuth, asyncHandler(spots.deleteSpot));
 
 router.get('/:id/dishes', asyncHandler(dishes.listDishes));
 router.post('/:id/dishes', requireAuth, asyncHandler(dishes.createDish));
