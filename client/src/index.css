@@ -1,45 +1,116 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens from the spec's ui_design block. Everything downstream
- * references these names, so a palette change happens in one place.
+ * ─── Warm & Artisanal design tokens ────────────────────────────────────────
+ *
+ * Every colour below was checked against WCAG before it landed here. Two rules
+ * govern the warm palette, because "warm" is where contrast usually goes wrong:
+ *
+ *   1. `terracotta` is the only warm tone allowed to sit under white text
+ *      (5.18:1). `ember` is 3.63:1 there, so it is decorative only — gradients,
+ *      glows, pin fills, star strokes — and never a text background.
+ *   2. Body copy uses `ink` (15.6:1) or `muted` (6.0:1) on cream. Nothing else.
+ *
+ * The legacy token names (accent, line, bg…) are kept as the primary spelling
+ * so pages that haven't been rebuilt yet inherit the corrected palette instead
+ * of drifting away from it.
  */
 @theme {
-  --color-bg: #f9f6f1;
+  /* Grounds */
+  --color-bg: #fdf8f1; /* cream paper */
   --color-surface: #ffffff;
-  --color-accent: #e07b39;
-  --color-accent-dark: #c96829;
-  --color-accent-soft: #fbeade;
-  --color-ink: #1c1c1c;
-  --color-muted: #6b6b6b;
-  --color-success: #3dbe7a;
-  --color-success-soft: #e6f7ee;
-  --color-line: #e5e0d8;
+  --color-surface-warm: #fffcf7; /* cards that need to feel lifted off cream */
+  --color-charcoal: #2b231d; /* inverted moments: footer, map sheet */
 
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Ink */
+  --color-ink: #241e1a; /* 15.58:1 on cream */
+  --color-muted: #6b5d52; /* 6.00:1 on cream — safe for small print */
 
-  /* 12 / 14 / 16 / 20 / 28 / 36 from the spec's size_scale */
+  /* Terracotta — the load-bearing accent */
+  --color-accent: #c2410c; /* 4.90:1 on cream, 5.18:1 under white text */
+  --color-accent-dark: #9a3412; /* hover / press / focus ring */
+  --color-accent-soft: #fbede4; /* tint fills; accent text on it is 4.52:1 */
+
+  /* Ember — decorative warmth only, never behind text */
+  --color-ember: #d2691e;
+  --color-ember-glow: #f0a868;
+
+  /* Olive — the second voice that stops this reading as "generic orange app" */
+  --color-olive: #4a5a3a; /* 7.06:1 on cream */
+  --color-olive-soft: #eef1e6;
+
+  /* Signals */
+  --color-amber: #b45309; /* star fill */
+  --color-success: #3f7d5a;
+  --color-success-soft: #e8f0ea;
+  --color-danger: #b42318;
+
+  /* Rules & edges */
+  --color-line: #dcc9b6;
+  --color-line-strong: #c9b49c;
+
+  /* ─── Type ──────────────────────────────────────────────────────────────
+     Fraunces for anything with a voice, Public Sans for anything with a job. */
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.75rem;
-  --text-2xl: 2.25rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --text-4xl: 3rem;
+  /* Hero sizes interpolate rather than stepping at a breakpoint. */
+  --text-hero: clamp(2.75rem, 9vw, 6rem);
+  --text-section: clamp(1.75rem, 4.5vw, 2.75rem);
 
-  --radius-card: 12px;
+  /* ─── Shape ─────────────────────────────────────────────────────────────
+     Radii climb in a curve, not a line, so small chips stay crisp while large
+     surfaces get generous and soft. */
+  --radius-chip: 999px;
+  --radius-card: 16px;
+  --radius-panel: 24px;
+  --radius-hero: 32px;
 
-  --shadow-card: 0 1px 2px rgb(28 28 28 / 0.04), 0 4px 12px rgb(28 28 28 / 0.06);
-  --shadow-lift: 0 4px 8px rgb(28 28 28 / 0.06), 0 12px 28px rgb(28 28 28 / 0.1);
+  /* ─── Depth ─────────────────────────────────────────────────────────────
+     Shadows are tinted with the ink's warmth. Neutral grey shadows are the
+     fastest way to make a warm palette look cheap. */
+  --shadow-card: 0 1px 2px rgb(90 62 42 / 0.05), 0 4px 14px rgb(90 62 42 / 0.07);
+  --shadow-lift: 0 6px 12px rgb(90 62 42 / 0.08), 0 18px 40px rgb(90 62 42 / 0.13);
+  --shadow-panel: 0 -4px 24px rgb(90 62 42 / 0.1);
+  --shadow-ember: 0 6px 24px rgb(210 105 30 / 0.28);
 
-  /* Layout constants: 220px sidebar + 60px navbar */
-  --spacing-sidebar: 220px;
-  --spacing-navbar: 60px;
+  /* Layout constants */
+  --spacing-sidebar: 232px;
+  --spacing-navbar: 64px;
+  --spacing-bottomnav: 64px;
+}
+
+/*
+ * ─── Motion tokens ──────────────────────────────────────────────────────────
+ * Mirrored in src/motion/tokens.js — these exist for the handful of places
+ * that animate in CSS (hover transitions) so both systems share one vocabulary.
+ * Exits are always faster than entrances: leaving should feel decisive.
+ */
+:root {
+  --dur-quick: 180ms;
+  --dur-base: 320ms;
+  --dur-slow: 600ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
 }
 
 @layer base {
   html {
     background-color: var(--color-bg);
+    -webkit-tap-highlight-color: transparent;
+    /* Full-bleed sections are sized in `vw`, which includes the scrollbar, so
+       they overhang by a few pixels by design. This has to sit on `html` as
+       well as `body` — with it on `body` alone the document still scrolls
+       sideways by that sliver. */
+    overflow-x: hidden;
   }
 
   body {
@@ -47,34 +118,189 @@
     color: var(--color-ink);
     background-color: var(--color-bg);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Nothing should ever scroll sideways by accident. */
+    overflow-x: hidden;
   }
 
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    letter-spacing: -0.01em;
+    font-variation-settings: 'SOFT' 60, 'WONK' 1;
+    letter-spacing: -0.02em;
+    line-height: 1.08;
   }
 
-  /* Keyboard focus stays visible; mouse clicks don't paint a ring. */
+  /* Keyboard focus stays loud; mouse clicks stay quiet. */
   :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
+    outline: 2px solid var(--color-accent-dark);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-dark);
+  }
+
+  /* Warm-tinted scrollbar so the chrome doesn't break the palette. */
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
   }
 }
 
 @layer utilities {
-  /* Horizontal card rows on Home scroll without a visible scrollbar. */
+  /* Horizontal card rows scroll without a visible scrollbar, and snap. */
   .scroll-row {
     scrollbar-width: none;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
   }
   .scroll-row::-webkit-scrollbar {
     display: none;
+  }
+  .scroll-row > * {
+    scroll-snap-align: start;
   }
 
   .card {
     background: var(--color-surface);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
+  }
+
+  /* Display type at hero scale wants a tighter optical size and less tracking. */
+  .font-display {
+    font-variation-settings: 'SOFT' 60, 'WONK' 1;
+  }
+
+  /* Small-caps-ish label treatment: cuisine tags, distances, metadata. */
+  .label-caps {
+    font-family: var(--font-body);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 600;
+    font-size: 0.6875rem;
+  }
+
+  /*
+   * Organic image masks. Real food photography in a hard rectangle is the
+   * single biggest "generic template" tell, so hero and feature imagery gets
+   * an asymmetric radius instead.
+   */
+  .blob-a {
+    border-radius: 58% 42% 47% 53% / 45% 51% 49% 55%;
+  }
+  .blob-b {
+    border-radius: 44% 56% 61% 39% / 57% 43% 57% 43%;
+  }
+  .arch {
+    border-radius: 50% 50% var(--radius-card) var(--radius-card) / 32% 32% var(--radius-card)
+      var(--radius-card);
+  }
+
+  /* Hand-drawn underline for editorial emphasis, drawn as a background so it
+     survives line wraps. */
+  .doodle-underline {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12' preserveAspectRatio='none'%3E%3Cpath d='M2 8c18-5 38-7 58-4 20 3 38 1 58-3' stroke='%23D2691E' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 100% 0.4em;
+    padding-bottom: 0.12em;
+  }
+
+  /* Paper grain. Fixed to the viewport so it reads as the page's own texture
+     rather than something scrolling with the content. */
+  .grain::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Warm grade over photography: lifts shadows toward terracotta so stock food
+     photos of different origins still look like one curated set. */
+  .grade-warm {
+    filter: saturate(1.06) contrast(1.03);
+  }
+  .grade-warm::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgb(210 105 30 / 0.06) 0%,
+      transparent 42%,
+      rgb(43 35 29 / 0.34) 100%
+    );
+    pointer-events: none;
+  }
+
+  /*
+   * Map pins.
+   *
+   * MapLibre markers are plain DOM nodes it positions itself, so they live
+   * outside React and Framer entirely — their motion has to be CSS. Pins drop
+   * in on a staggered delay set inline per marker, and `data-active` is
+   * toggled from the list to link a hovered card to its pin.
+   *
+   * Only transform is animated, and `will-change` is deliberately absent:
+   * promoting a hundred markers to their own layers costs more than the
+   * animation saves.
+   */
+  /* MapLibre owns the anchor's transform — never style transform on it. */
+  .spot-pin {
+    display: block;
+    transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base) var(--ease-out);
+    transform-origin: 50% 100%;
+    animation: pin-drop 480ms var(--ease-out) backwards;
+  }
+  .spot-pin:hover,
+  .spot-pin-anchor[data-active='true'] .spot-pin {
+    transform: scale(1.45) translateY(-3px);
+    filter: drop-shadow(0 6px 10px rgb(90 62 42 / 0.35));
+  }
+  .spot-pin-anchor[data-active='true'] {
+    z-index: 5;
+  }
+
+  @keyframes pin-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Safe-area padding for the mobile bottom nav on notched devices. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mb-safe-nav {
+    margin-bottom: calc(var(--spacing-bottomnav) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/*
+ * ─── Reduced motion ─────────────────────────────────────────────────────────
+ * Framer Motion is handled in JS via useReducedMotion (see src/motion). This
+ * block covers CSS-driven motion and, critically, the third-party maplibre
+ * canvas animations we don't otherwise control.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

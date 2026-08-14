@@ -38,7 +38,10 @@ export default defineConfig({
   // background colour. Serving the package from its real path keeps them together.
   optimizeDeps: { exclude: ['maplibre-gl'] },
   server: {
-    port: 5173,
+    // 5173 by default; PORT lets a harness or a second checkout run alongside
+    // an existing dev server. The /api proxy below means the client's port is
+    // never baked into a CORS origin, so moving it is safe.
+    port: Number(process.env.PORT) || 5173,
     // Lets the client call /api/... directly without CORS or a base URL in dev.
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },

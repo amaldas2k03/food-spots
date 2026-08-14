@@ -1,31 +1,221 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { SlidersHorizontal, MapPin, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { SlidersHorizontal, MapPin, X, RotateCcw } from 'lucide-react';
 import * as spotsApi from '../api/spots.js';
 import SpotCard from '../components/SpotCard.jsx';
 import StarRating from '../components/StarRating.jsx';
-import { Spinner, ErrorState, EmptyState } from '../components/Feedback.jsx';
+import { ErrorState, EmptyState } from '../components/Feedback.jsx';
+import {
+  Button,
+  Chip,
+  Drawer,
+  Reveal,
+  RevealItem,
+  SpotGridSkeleton,
+} from '../components/ui/index.js';
 import { useGeolocation } from '../hooks/useGeolocation.js';
+import { useIsDesktop } from '../hooks/useMediaQuery.js';
+import { useAuthStore } from '../store/authStore.js';
+import { useSavedStore } from '../store/savedStore.js';
 import { CUISINES, DIETARY_TAGS, formatDistance } from '../utils/format.js';
+import { VIBES, matchesVibes } from '../utils/vibes.js';
+import { settle, snap } from '../motion/index.js';
 
 const PRICES = [1, 2, 3, 4];
+const EMPTY = { cuisine: [], dietary: [], price: [], vibe: [], minRating: 0, radius: 5000 };
+
+/**
+ * A collapsible filter group.
+ *
+ * Height animation is the one place worth breaking the transform-only rule:
+ * there's no way to reveal unknown-height content without it. It's scoped to a
+ * single group the user just clicked, animating one subtree rather than the
+ * page, so the layout cost is bounded and paid only on an explicit action.
+ */
+function FilterGroup({ legend, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <fieldset className="border-b border-line pb-4">
+      <legend className="sr-only">{legend}</legend>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between py-2 text-left"
+      >
+        <span className="label-caps text-ink">{legend}</span>
+        <motion.span animate={{ rotate: open ? 45 : 0 }} transition={snap} className="text-muted">
+          <X size={15} aria-hidden />
+        </motion.span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={settle}
+            className="overflow-hidden"
+          >
+            <div className="pt-2">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </fieldset>
+  );
+}
+
+function FilterPanel({ filters, setFilters, toggle, coords, geoLoading, geoError, request }) {
+  return (
+    <div className="space-y-4">
+      <FilterGroup legend="Vibe">
+        <div className="flex flex-wrap gap-2">
+          {VIBES.map((v) => (
+            <Chip
+              key={v.id}
+              tone="olive"
+              selected={filters.vibe.includes(v.id)}
+              onToggle={() => toggle('vibe', v.id)}
+            >
+              {v.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          Vibes are worked out from ratings, price and opening hours — not typed in by anyone.
+        </p>
+      </FilterGroup>
+
+      <FilterGroup legend="Cuisine">
+        <div className="flex flex-wrap gap-2">
+          {CUISINES.map((c) => (
+            <Chip key={c} selected={filters.cuisine.includes(c)} onToggle={() => toggle('cuisine', c)}>
+              {c}
+            </Chip>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup legend="Price">
+        <div className="flex gap-2">
+          {PRICES.map((p) => (
+            <motion.button
+              key={p}
+              type="button"
+              onClick={() => toggle('price', p)}
+              aria-pressed={filters.price.includes(p)}
+              className={`min-h-11 flex-1 cursor-pointer rounded-xl border text-sm font-semibold transition-colors ${
+                filters.price.includes(p)
+                  ? 'border-accent bg-accent-soft text-accent-dark'
+                  : 'border-line text-muted hover:border-accent'
+              }`}
+              whileTap={{ scale: 0.94 }}
+              transition={snap}
+            >
+              {'$'.repeat(p)}
+            </motion.button>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup legend="Dietary needs">
+        <div className="flex flex-wrap gap-2">
+          {DIETARY_TAGS.map((d) => (
+            <Chip
+              key={d}
+              selected={filters.dietary.includes(d)}
+              onToggle={() => toggle('dietary', d)}
+            >
+              {d}
+            </Chip>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup legend="Minimum rating">
+        <div className="flex items-center gap-3">
+          <StarRating
+            value={filters.minRating}
+            onChange={(v) => setFilters((f) => ({ ...f, minRating: v === f.minRating ? 0 : v }))}
+            size={22}
+            label="Minimum rating"
+          />
+          {filters.minRating > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...f, minRating: 0 }))}
+              className="cursor-pointer text-xs text-muted hover:text-ink"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup legend="Distance">
+        {coords ? (
+          <>
+            <input
+              type="range"
+              min={500}
+              max={25000}
+              step={500}
+              value={filters.radius}
+              onChange={(e) => setFilters((f) => ({ ...f, radius: Number(e.target.value) }))}
+              aria-label="Search radius"
+              className="w-full accent-[var(--color-accent)]"
+            />
+            <p className="mt-1.5 text-xs text-muted">Within {formatDistance(filters.radius)}</p>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={MapPin}
+              onClick={request}
+              disabled={geoLoading}
+              block
+            >
+              {geoLoading ? 'Locating…' : 'Use my location'}
+            </Button>
+            {geoError && (
+              <p role="alert" className="mt-1.5 text-xs text-danger">
+                {geoError}
+              </p>
+            )}
+          </>
+        )}
+      </FilterGroup>
+    </div>
+  );
+}
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
   const { coords, error: geoError, loading: geoLoading, request } = useGeolocation();
+  const isDesktop = useIsDesktop();
+  const user = useAuthStore((s) => s.user);
+  const initSaved = useSavedStore((s) => s.init);
 
-  const [filters, setFilters] = useState({
-    cuisine: [],
-    dietary: [],
-    price: [],
-    minRating: 0,
-    radius: 5000,
-  });
+  // A vibe can arrive from the landing page's mood chips.
+  const [filters, setFilters] = useState(() => ({
+    ...EMPTY,
+    vibe: params.get('vibe') ? [params.get('vibe')] : [],
+  }));
   const [spots, setSpots] = useState([]);
   const [state, setState] = useState({ loading: true, error: null });
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const query = params.get('q') ?? '';
   const sort = params.get('sort') ?? 'rating';
+
+  useEffect(() => {
+    if (user) initSaved();
+  }, [user, initSaved]);
 
   const toggle = (key, value) =>
     setFilters((f) => ({
@@ -57,189 +247,235 @@ export default function SearchPage() {
     search();
   }, [search]);
 
+  /*
+   * Vibes are derived client-side (there's no column for them), so they're
+   * applied to the results the server returned rather than sent as a query
+   * param — which would silently do nothing.
+   */
+  const visible = useMemo(
+    () => spots.filter((s) => matchesVibes(s, filters.vibe)),
+    [spots, filters.vibe],
+  );
+
   const activeCount =
-    filters.cuisine.length + filters.dietary.length + filters.price.length + (filters.minRating ? 1 : 0);
+    filters.cuisine.length +
+    filters.dietary.length +
+    filters.price.length +
+    filters.vibe.length +
+    (filters.minRating ? 1 : 0);
+
+  /** Removable summary of everything currently narrowing the results. */
+  const activeChips = [
+    ...filters.vibe.map((v) => ({
+      key: `vibe-${v}`,
+      label: VIBES.find((x) => x.id === v)?.label ?? v,
+      remove: () => toggle('vibe', v),
+    })),
+    ...filters.cuisine.map((c) => ({
+      key: `cuisine-${c}`,
+      label: c,
+      remove: () => toggle('cuisine', c),
+    })),
+    ...filters.price.map((p) => ({
+      key: `price-${p}`,
+      label: '$'.repeat(p),
+      remove: () => toggle('price', p),
+    })),
+    ...filters.dietary.map((d) => ({
+      key: `dietary-${d}`,
+      label: d,
+      remove: () => toggle('dietary', d),
+    })),
+    ...(filters.minRating
+      ? [
+          {
+            key: 'rating',
+            label: `${filters.minRating}★ and up`,
+            remove: () => setFilters((f) => ({ ...f, minRating: 0 })),
+          },
+        ]
+      : []),
+  ];
+
+  const panel = (
+    <FilterPanel
+      filters={filters}
+      setFilters={setFilters}
+      toggle={toggle}
+      coords={coords}
+      geoLoading={geoLoading}
+      geoError={geoError}
+      request={request}
+    />
+  );
 
   return (
-    <div className="flex gap-6">
-      <aside className="w-60 shrink-0 space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <SlidersHorizontal size={16} /> Filters
-          </h2>
-          {activeCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setFilters({ cuisine: [], dietary: [], price: [], minRating: 0, radius: 5000 })}
-              className="text-xs text-accent hover:underline"
-            >
-              Clear ({activeCount})
-            </button>
-          )}
+    <div className="flex gap-8">
+      {/* Desktop filter rail. On mobile the identical panel is in a drawer. */}
+      <aside className="hidden w-64 shrink-0 md:block">
+        <div className="sticky top-[calc(var(--spacing-navbar)+1.5rem)]">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+              <SlidersHorizontal size={16} aria-hidden /> Filters
+            </h2>
+            <AnimatePresence>
+              {activeCount > 0 && (
+                <motion.button
+                  type="button"
+                  onClick={() => setFilters(EMPTY)}
+                  className="flex cursor-pointer items-center gap-1 text-xs text-accent hover:underline"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={snap}
+                >
+                  <RotateCcw size={12} aria-hidden /> Clear {activeCount}
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+          {panel}
         </div>
-
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">Cuisine</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {CUISINES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => toggle('cuisine', c)}
-                aria-pressed={filters.cuisine.includes(c)}
-                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                  filters.cuisine.includes(c)
-                    ? 'border-accent bg-accent-soft text-accent'
-                    : 'border-line hover:border-accent'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">Price</legend>
-          <div className="flex gap-1.5">
-            {PRICES.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => toggle('price', p)}
-                aria-pressed={filters.price.includes(p)}
-                className={`flex-1 rounded-lg border py-1.5 text-xs transition-colors ${
-                  filters.price.includes(p)
-                    ? 'border-accent bg-accent-soft text-accent'
-                    : 'border-line hover:border-accent'
-                }`}
-              >
-                {'$'.repeat(p)}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">Dietary needs</legend>
-          <div className="space-y-1.5">
-            {DIETARY_TAGS.map((d) => (
-              <label key={d} className="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={filters.dietary.includes(d)}
-                  onChange={() => toggle('dietary', d)}
-                  className="accent-[var(--color-accent)]"
-                />
-                {d}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">Minimum rating</legend>
-          <div className="flex items-center gap-2">
-            <StarRating
-              value={filters.minRating}
-              onChange={(v) => setFilters((f) => ({ ...f, minRating: v === f.minRating ? 0 : v }))}
-              size={18}
-            />
-            {filters.minRating > 0 && (
-              <button
-                type="button"
-                onClick={() => setFilters((f) => ({ ...f, minRating: 0 }))}
-                aria-label="Clear rating filter"
-                className="text-muted hover:text-ink"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">Distance</legend>
-          {coords ? (
-            <>
-              <input
-                type="range"
-                min={500}
-                max={25000}
-                step={500}
-                value={filters.radius}
-                onChange={(e) => setFilters((f) => ({ ...f, radius: Number(e.target.value) }))}
-                className="w-full accent-[var(--color-accent)]"
-              />
-              <p className="mt-1 text-xs text-muted">Within {formatDistance(filters.radius)}</p>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={request}
-                disabled={geoLoading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line py-2 text-xs hover:border-accent disabled:opacity-60"
-              >
-                <MapPin size={13} />
-                {geoLoading ? 'Locating…' : 'Use my location'}
-              </button>
-              {geoError && <p className="mt-1 text-xs text-red-600">{geoError}</p>}
-            </>
-          )}
-        </fieldset>
       </aside>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold">
-              {query ? `Results for "${query}"` : 'All spots'}
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="label-caps mb-2 text-ember">
+              {query ? 'Search results' : 'The whole collection'}
+            </p>
+            <h1 className="font-display text-2xl font-bold sm:text-3xl">
+              {query ? `“${query}”` : 'All spots'}
             </h1>
-            <p className="text-xs text-muted">
-              {state.loading ? 'Searching…' : `${spots.length} spot${spots.length === 1 ? '' : 's'}`}
+            <p className="mt-1 text-sm text-muted" aria-live="polite">
+              {state.loading
+                ? 'Looking…'
+                : `${visible.length} spot${visible.length === 1 ? '' : 's'}`}
               {coords ? ' near you' : ''}
             </p>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted">Sort</span>
-            <select
-              value={sort}
-              onChange={(e) => {
-                const next = new URLSearchParams(params);
-                next.set('sort', e.target.value);
-                setParams(next);
-              }}
-              className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="sr-only sm:not-sr-only sm:text-muted">Sort</span>
+              <select
+                value={sort}
+                onChange={(e) => {
+                  const next = new URLSearchParams(params);
+                  next.set('sort', e.target.value);
+                  setParams(next);
+                }}
+                className="min-h-11 cursor-pointer rounded-xl border border-line bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              >
+                <option value="rating">Top rated</option>
+                <option value="reviews">Most reviewed</option>
+                <option value="newest">Newest</option>
+                <option value="distance" disabled={!coords}>
+                  Nearest{coords ? '' : ' (needs location)'}
+                </option>
+              </select>
+            </label>
+
+            <Button
+              variant="secondary"
+              icon={SlidersHorizontal}
+              onClick={() => setDrawerOpen(true)}
+              className="md:hidden"
             >
-              <option value="rating">Top rated</option>
-              <option value="reviews">Most reviewed</option>
-              <option value="newest">Newest</option>
-              <option value="distance" disabled={!coords}>
-                Nearest{coords ? '' : ' (needs location)'}
-              </option>
-            </select>
-          </label>
+              Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+            </Button>
+          </div>
         </div>
 
+        {/* Active filters. They animate in and out so removing one reads as a
+            physical change to the query, not a silent re-render. */}
+        {activeChips.length > 0 && (
+          <motion.ul layout className="mb-5 flex flex-wrap gap-2">
+            <AnimatePresence mode="popLayout">
+              {activeChips.map((chip) => (
+                <motion.li
+                  key={chip.key}
+                  layout
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={snap}
+                >
+                  <button
+                    type="button"
+                    onClick={chip.remove}
+                    className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded-chip bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-dark hover:bg-accent hover:text-white"
+                  >
+                    {chip.label}
+                    <X size={13} aria-hidden />
+                    <span className="sr-only">Remove filter</span>
+                  </button>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </motion.ul>
+        )}
+
         {state.loading ? (
-          <Spinner />
+          <SpotGridSkeleton count={6} />
         ) : state.error ? (
           <ErrorState error={state.error} onRetry={search} />
-        ) : spots.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyState
-            title="No spots match those filters"
-            hint="Try removing a filter or widening the distance radius."
+            art="search"
+            title="Nothing matches all of that"
+            hint={
+              activeCount > 0
+                ? 'That combination is a bit tight. Drop a filter and see what turns up.'
+                : 'Try a different search term, or browse the map instead.'
+            }
+            action={
+              activeCount > 0 ? (
+                <Button icon={RotateCcw} onClick={() => setFilters(EMPTY)}>
+                  Clear filters
+                </Button>
+              ) : (
+                <Button to="/map">Open the map</Button>
+              )
+            }
           />
         ) : (
-          <div className="grid grid-cols-3 gap-4">
-            {spots.map((spot) => (
-              <SpotCard key={spot.id} spot={spot} />
+          <Reveal className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" gap={0.05}>
+            {visible.map((spot) => (
+              <RevealItem key={spot.id}>
+                <SpotCard spot={spot} />
+              </RevealItem>
             ))}
-          </div>
+          </Reveal>
         )}
       </div>
+
+      {/* Mobile filters — same panel, delivered as a thumb-reachable sheet. */}
+      {!isDesktop && (
+        <Drawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          title="Filters"
+          description={`${visible.length} spot${visible.length === 1 ? '' : 's'} match`}
+          footer={
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setFilters(EMPTY)}
+                disabled={activeCount === 0}
+                className="flex-1"
+              >
+                Clear all
+              </Button>
+              <Button onClick={() => setDrawerOpen(false)} className="flex-1">
+                Show {visible.length} result{visible.length === 1 ? '' : 's'}
+              </Button>
+            </div>
+          }
+        >
+          {panel}
+        </Drawer>
+      )}
     </div>
   );
 }
