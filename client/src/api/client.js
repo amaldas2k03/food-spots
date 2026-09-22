@@ -5,6 +5,9 @@ export const TOKEN_KEY = 'foodspots_token';
 const api = axios.create({
   // Empty base URL in dev: Vite proxies /api to the server.
   baseURL: `${import.meta.env.VITE_API_URL || ''}/api`,
+  // ngrok's free tier serves an interstitial warning page for browser requests
+  // unless this header is present. Harmless when not tunneling through ngrok.
+  headers: { 'ngrok-skip-browser-warning': 'true' },
 });
 
 api.interceptors.request.use((config) => {
