@@ -1,0 +1,38 @@
+# Render Blueprint for the FoodSpots API (Express + Socket.io + Prisma).
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo.
+# The database is Neon (external) — set DATABASE_URL from your Neon pooled
+# connection string when prompted.
+services:
+  - type: web
+    name: foodspots-api
+    runtime: node
+    rootDir: server
+    plan: free
+    region: oregon
+    branch: main
+    healthCheckPath: /api/health
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      # Neon pooled connection string (…-pooler.…neon.tech). Set in dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # Auto-generated strong secret for signing JWTs.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # The deployed Vercel URL, e.g. https://foodspots.vercel.app (no trailing slash).
+      - key: CLIENT_ORIGIN
+        sync: false
+      # Optional feature keys — leave blank to disable the feature.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_MAPS_SERVER_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
