@@ -140,17 +140,27 @@ Start-Process powershell -ArgumentList '-NoExit','-Command',$serverCmd | Out-Nul
 Start-Process powershell -ArgumentList '-NoExit','-Command',$clientCmd | Out-Null
 Write-Ok "Server + Client windows opened. Closing them stops the app."
 
-# --- 7b. Cloudflare tunnel: expose the API publicly (for a Vercel frontend) ---
+# --- 7b. Public tunnel: expose the API for a hosted frontend (e.g. Vercel) ---
+# Preference order:
+#   1. ngrok reserved domain (PERMANENT URL) if .launcher-state\ngrok-domain.txt exists
+#   2. Cloudflare quick tunnel (random URL each launch) if cloudflared is installed
 $tunnelUrl = $null
-Write-Step "Starting Cloudflare tunnel for the API..."
-if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
-    $stateDir = Join-Path $Root '.launcher-state'
-    New-Item -ItemType Directory -Force $stateDir | Out-Null
-    $tunnelLog = Join-Path $stateDir 'tunnel.log'
-    Remove-Item $tunnelLog -ErrorAction SilentlyContinue
+$stateDir = Join-Path $Root '.launcher-state'
+New-Item -ItemType Directory -Force $stateDir | Out-Null
+$tunnelLog = Join-Path $stateDir 'tunnel.log'
+Remove-Item $tunnelLog -ErrorAction SilentlyContinue
+$ngrokDomainFile = Join-Path $stateDir 'ngrok-domain.txt'
 
-    # Tee output to a log so we can read back the assigned URL. Closing this
-    # window stops the tunnel (just like the Server/Client windows).
+if ((Test-Path $ngrokDomainFile) -and (Get-Command ngrok -ErrorAction SilentlyContinue)) {
+    Write-Step "Starting ngrok tunnel (permanent domain) for the API..."
+    $domain = (Get-Content $ngrokDomainFile -Raw).Trim()
+    # Closing this window stops the tunnel (like the Server/Client windows).
+    $ngCmd = "`$Host.UI.RawUI.WindowTitle='FoodSpots Tunnel'; ngrok http --domain=$domain 4000"
+    Start-Process powershell -ArgumentList '-NoExit','-Command',$ngCmd | Out-Null
+    $tunnelUrl = "https://$domain"
+    Write-Ok "ngrok tunnel starting. Permanent API URL: $tunnelUrl"
+} elseif (Get-Command cloudflared -ErrorAction SilentlyContinue) {
+    Write-Step "Starting Cloudflare quick tunnel for the API..."
     $cfCmd = "`$Host.UI.RawUI.WindowTitle='FoodSpots Tunnel'; cloudflared tunnel --url http://localhost:4000 2>&1 | Tee-Object -FilePath '$tunnelLog'"
     Start-Process powershell -ArgumentList '-NoExit','-Command',$cfCmd | Out-Null
 
@@ -166,13 +176,13 @@ if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
     }
     Write-Host ""
     if ($tunnelUrl) {
-        Write-Ok "Public API URL: $tunnelUrl"
+        Write-Ok "Public API URL (changes each launch): $tunnelUrl"
     } else {
         Write-Warn2 "Tunnel started but no URL parsed yet - check the 'FoodSpots Tunnel' window."
     }
 } else {
-    Write-Warn2 "cloudflared not found - skipping the tunnel (the local app still works)."
-    Write-Warn2 "Install it with:  winget install --id Cloudflare.cloudflared"
+    Write-Warn2 "No tunnel tool found - skipping the tunnel (the local app still works)."
+    Write-Warn2 "For a permanent URL install ngrok:  winget install --id Ngrok.Ngrok"
 }
 
 # --- 8. Wait for the client, then open the browser ---
